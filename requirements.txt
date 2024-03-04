@@ -1,0 +1,4 @@
+Flask
+Flask-SQLAlchemy==3.0
+Flask-PyMongo==2.3.0
+Flask-Redis
