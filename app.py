@@ -144,7 +144,91 @@ def update_nosql_user(user_id):
     return jsonify(message=f'User {user_id} updated successfully', updated_user=updated_user)
 
 #2 Phase Commit
+def prepare_sql_transaction(username):
+    try:
+        new_user = User(username=username)
+        db.session.add(new_user)
+        db.session.flush()  # Ensure that the user has an ID before committing
+        return new_user.id
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error preparing SQL transaction: {e}")
+        return None
 
+def commit_sql_transaction(user_id):
+    try:
+        db.session.commit()
+        return True
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error committing SQL transaction: {e}")
+        return False
+
+def rollback_sql_transaction(user_id):
+    try:
+        # Rollback any changes
+        db.session.rollback()
+        return True
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error rolling back SQL transaction: {e}")
+        return False
+
+def prepare_nosql_transaction(username):
+    try:
+        new_user = {'username': username}
+        mongo.db.users.insert_one(new_user)
+        return str(new_user['_id'])
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error preparing NoSQL transaction: {e}")
+        return None
+
+def commit_nosql_transaction(user_id):
+    try:
+        return True
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error committing NoSQL transaction: {e}")
+        return False
+
+def rollback_nosql_transaction(user_id):
+    try:
+        # Remove the user added during prepare
+        mongo.db.users.delete_one({'_id': ObjectId(user_id)})
+        return True
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error rolling back NoSQL transaction: {e}")
+        return False
+
+@app.route('/api/microservice_commit', methods=['POST'])
+def microservice_commit():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+
+        # Phase 1: Prepare
+        sql_user_id = prepare_sql_transaction(username)
+        nosql_user_id = prepare_nosql_transaction(username)
+
+        if sql_user_id is not None and nosql_user_id is not None:
+            # Both databases prepared successfully
+
+            # Phase 2: Commit
+            if commit_sql_transaction(sql_user_id) and commit_nosql_transaction(nosql_user_id):
+                return jsonify(message='Transaction committed successfully'), 200
+
+        # If any phase failed, rollback both databases
+        rollback_sql_transaction(sql_user_id)
+        rollback_nosql_transaction(nosql_user_id)
+
+        return jsonify(message='Transaction failed. Rollback performed'), 500
+
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"Error in microservice_commit: {e}")
+        return jsonify(message='Internal server error'), 500
 
 if __name__ == '__main__':
     with app.app_context():
